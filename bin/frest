@@ -1,0 +1,28 @@
+#!/usr/bin/env ruby
+require 'fileutils'
+require_relative '../frest/server'
+
+def init
+  require 'frest/server/init'
+  Frest::Server.setup
+end
+
+def start
+  Frest::Server.start
+end
+
+def update_database
+  require 'frest/server/init'
+  Frest::Server.update_database
+end
+
+case ARGV[0]
+  when 'init'
+    init
+  when 'start'
+    start
+  when 'update_database'
+    update_database
+  when '-v'
+    p Frest.version
+end
