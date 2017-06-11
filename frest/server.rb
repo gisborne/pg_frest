@@ -9,7 +9,7 @@ module Frest
       app = Proc.new do |env|
         req = Rack::Request.new(env)
         sql = <<~SQL
-          SELECT frest.request(
+          SELECT request(
             $1::json
           )
         SQL
@@ -20,11 +20,13 @@ module Frest
             headers:  env['HTTP_Variables'],
             params:   req.params,
             body:     req.body.read,
-            session:  req.session
+            session:  req.session,
+            cookies:  req.cookies
           }.to_json],
-        ).first['request']
+        )
+        result = result.first['request']
         
-        results = JSON.parse result
+        results = JSON.parse(result).first['request']
         [results['status'], results['headers'], results['body']]
       end
 

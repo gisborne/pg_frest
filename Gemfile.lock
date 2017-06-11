@@ -1,9 +1,16 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    coderay (1.1.1)
+    method_source (0.8.2)
     pg (0.20.0)
     pg_array_parser (0.0.9)
+    pry (0.10.4)
+      coderay (~> 1.1.0)
+      method_source (~> 0.8.1)
+      slop (~> 3.4)
     rack (2.0.3)
+    slop (3.6.0)
 
 PLATFORMS
   ruby
@@ -12,6 +19,7 @@ DEPENDENCIES
   bundler
   pg
   pg_array_parser
+  pry
   rack
 
 BUNDLED WITH
