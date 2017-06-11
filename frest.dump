@@ -1,0 +1,1657 @@
+--
+-- PostgreSQL database dump
+--
+
+-- Dumped from database version 9.6.3
+-- Dumped by pg_dump version 9.6.2
+
+-- Started on 2017-06-10 21:14:32 PDT
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SET check_function_bodies = false;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- TOC entry 9 (class 2615 OID 41928)
+-- Name: anon; Type: SCHEMA; Schema: -; Owner: anon
+--
+
+CREATE SCHEMA anon;
+
+
+ALTER SCHEMA anon OWNER TO anon;
+
+--
+-- TOC entry 11 (class 2615 OID 41543)
+-- Name: frest; Type: SCHEMA; Schema: -; Owner: frest
+--
+
+CREATE SCHEMA frest;
+
+
+ALTER SCHEMA frest OWNER TO frest;
+
+--
+-- TOC entry 15 (class 2615 OID 41853)
+-- Name: frest_framework; Type: SCHEMA; Schema: -; Owner: frest
+--
+
+CREATE SCHEMA frest_framework;
+
+
+ALTER SCHEMA frest_framework OWNER TO frest;
+
+--
+-- TOC entry 12 (class 2615 OID 41931)
+-- Name: lib; Type: SCHEMA; Schema: -; Owner: frest
+--
+
+CREATE SCHEMA lib;
+
+
+ALTER SCHEMA lib OWNER TO frest;
+
+--
+-- TOC entry 3 (class 3079 OID 12655)
+-- Name: plpgsql; Type: EXTENSION; Schema: -; Owner: 
+--
+
+CREATE EXTENSION IF NOT EXISTS plpgsql WITH SCHEMA pg_catalog;
+
+
+--
+-- TOC entry 2640 (class 0 OID 0)
+-- Dependencies: 3
+-- Name: EXTENSION plpgsql; Type: COMMENT; Schema: -; Owner: 
+--
+
+COMMENT ON EXTENSION plpgsql IS 'PL/pgSQL procedural language';
+
+
+--
+-- TOC entry 1 (class 3079 OID 42152)
+-- Name: plpythonu; Type: EXTENSION; Schema: -; Owner: 
+--
+
+CREATE EXTENSION IF NOT EXISTS plpythonu WITH SCHEMA pg_catalog;
+
+
+--
+-- TOC entry 2641 (class 0 OID 0)
+-- Dependencies: 1
+-- Name: EXTENSION plpythonu; Type: COMMENT; Schema: -; Owner: 
+--
+
+COMMENT ON EXTENSION plpythonu IS 'PL/PythonU untrusted procedural language';
+
+
+--
+-- TOC entry 2 (class 3079 OID 41657)
+-- Name: plv8; Type: EXTENSION; Schema: -; Owner: 
+--
+
+CREATE EXTENSION IF NOT EXISTS plv8 WITH SCHEMA pg_catalog;
+
+
+--
+-- TOC entry 2642 (class 0 OID 0)
+-- Dependencies: 2
+-- Name: EXTENSION plv8; Type: COMMENT; Schema: -; Owner: 
+--
+
+COMMENT ON EXTENSION plv8 IS 'PL/JavaScript (v8) trusted procedural language';
+
+
+--
+-- TOC entry 5 (class 3079 OID 41932)
+-- Name: hstore; Type: EXTENSION; Schema: -; Owner: 
+--
+
+CREATE EXTENSION IF NOT EXISTS hstore WITH SCHEMA lib;
+
+
+--
+-- TOC entry 2643 (class 0 OID 0)
+-- Dependencies: 5
+-- Name: EXTENSION hstore; Type: COMMENT; Schema: -; Owner: 
+--
+
+COMMENT ON EXTENSION hstore IS 'data type for storing sets of (key, value) pairs';
+
+
+--
+-- TOC entry 4 (class 3079 OID 42055)
+-- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: 
+--
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA lib;
+
+
+--
+-- TOC entry 2644 (class 0 OID 0)
+-- Dependencies: 4
+-- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: 
+--
+
+COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
+
+
+SET search_path = frest, pg_catalog;
+
+--
+-- TOC entry 604 (class 1247 OID 41544)
+-- Name: identifier; Type: DOMAIN; Schema: frest; Owner: postgres
+--
+
+CREATE DOMAIN identifier AS character varying(63);
+
+
+ALTER DOMAIN identifier OWNER TO postgres;
+
+--
+-- TOC entry 693 (class 1247 OID 41833)
+-- Name: request_in; Type: TYPE; Schema: frest; Owner: postgres
+--
+
+CREATE TYPE request_in AS (
+	path text[],
+	args jsonb,
+	server text,
+	port smallint,
+	headers jsonb,
+	body bytea,
+	type_requested text[]
+);
+
+
+ALTER TYPE request_in OWNER TO postgres;
+
+--
+-- TOC entry 696 (class 1247 OID 41836)
+-- Name: request_out; Type: TYPE; Schema: frest; Owner: postgres
+--
+
+CREATE TYPE request_out AS (
+	status smallint,
+	headers jsonb,
+	body text
+);
+
+
+ALTER TYPE request_out OWNER TO postgres;
+
+SET search_path = public, pg_catalog;
+
+--
+-- TOC entry 605 (class 1247 OID 41614)
+-- Name: identifier; Type: DOMAIN; Schema: public; Owner: gisborne
+--
+
+CREATE DOMAIN identifier AS character varying(63);
+
+
+ALTER DOMAIN identifier OWNER TO gisborne;
+
+SET search_path = anon, pg_catalog;
+
+--
+-- TOC entry 314 (class 1255 OID 42145)
+-- Name: create_user("frest"."identifier", text, text)(frest.identifier, text, text); Type: FUNCTION; Schema: anon; Owner: frest
+--
+
+CREATE FUNCTION "create_user(""frest"".""identifier"", text, text)"(r frest.identifier, password text, password_confirmation text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $_$DECLARE
+	u UUID;
+BEGIN
+	IF password <> password_confirmation THEN
+		RAISE EXCEPTION 'password and confirmation do not match';
+	END IF;
+
+	IF EXISTS(SELECT 1 FROM roles WHERE roles.role = $1 AND frest.crypt($2, roles.salt) = roles.password) THEN
+		u := gen_random_uuid();
+		INSERT INTO
+			session_tokens(role, token)
+		VALUES(
+			role,
+			frest.digest(u::text, 'sha256')
+		);
+		RETURN u;
+	END IF;
+
+	RAISE EXCEPTION 'username/password not found';
+END$_$;
+
+
+ALTER FUNCTION anon."create_user(""frest"".""identifier"", text, text)"(r frest.identifier, password text, password_confirmation text) OWNER TO frest;
+
+--
+-- TOC entry 321 (class 1255 OID 42158)
+-- Name: login_password(text, text); Type: FUNCTION; Schema: anon; Owner: frest
+--
+
+CREATE FUNCTION login_password(r text, password text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $_$DECLARE
+	u UUID;
+	the_role text;
+BEGIN
+	the_role = (SELECT
+			role_name
+		FROM
+			frest.roles
+		WHERE
+			role_name = $1 AND 
+			lib.crypt($2, salt) = frest.roles.password);
+
+	IF
+		NOT the_role IS NULL
+	THEN
+		u := gen_random_uuid();
+		INSERT INTO
+			session_tokens(role_name, token)
+		VALUES(
+			r,
+			lib.digest(u::text, 'sha256')
+		);
+		RETURN u;
+	ELSE
+		RAISE EXCEPTION 'username/password not found';
+	END IF;
+END$_$;
+
+
+ALTER FUNCTION anon.login_password(r text, password text) OWNER TO frest;
+
+--
+-- TOC entry 316 (class 1255 OID 42150)
+-- Name: login_token(text); Type: FUNCTION; Schema: anon; Owner: frest
+--
+
+CREATE FUNCTION login_token(token text) RETURNS boolean
+    LANGUAGE plv8 STRICT SECURITY DEFINER COST 10
+    AS $_$var r = plv8.execute("SELECT role_name FROM frest.session_tokens WHERE lib.digest($1, 'sha256')::text = frest.session_tokens.token", [token])[0];
+
+if (r) {
+plv8.execute("SET ROLE $1", [role])
+return true
+} else {
+return false
+}
+$_$;
+
+
+ALTER FUNCTION anon.login_token(token text) OWNER TO frest;
+
+--
+-- TOC entry 320 (class 1255 OID 42151)
+-- Name: request(json); Type: FUNCTION; Schema: anon; Owner: frest
+--
+
+CREATE FUNCTION request(req json) RETURNS json
+    LANGUAGE plv8 SECURITY DEFINER
+    AS $_$plv8.inspect = function inspect(object, result) {
+    if (typeof object != "object")
+        return "Invalid object";
+    if (typeof result == "undefined")
+        result = '';
+
+    if (result.length > 50)
+        return "[RECURSION TOO DEEP. ABORTING.]";
+
+    var rows = [];
+    for (var property in object) {
+        var datatype = typeof object[property];
+
+        var tempDescription = result+'"'+property+'"';
+        tempDescription += ' ('+datatype+') => ';
+        if (datatype == "object")
+            tempDescription += 'object: '+inspect(object[property],result+'  ');
+        else
+            tempDescription += object[property];
+
+        rows.push(tempDescription);
+    }//Close for
+
+    return rows.join(result+"\n");
+}//End objectInspector
+
+function fn(name){
+	try{
+		return plv8.find_function(name)
+    } catch(err) {
+		return null
+    }
+}
+
+function setCookie(cookie, request) {
+	var results = {'headers':{}}
+
+	site_id = plv8.execute("SELECT get_setting('site_id')")
+	results['headers']['Set-Cookie'] = 'token=' + cookie
+	
+	return plv8.execute("SELECT request($1, $2)", [request, results])
+}
+
+function show_login() {
+	var body_id = _get_setting('login_form_id')
+	var body = plv8.execute("SELECT content FROM anon.content WHERE id = $1::uuid", [body_id])[0].content
+	return {
+		'status': 200,
+		'headers': [],
+		'body': []
+	}
+}
+
+function _get_setting(name) {
+	return plv8.execute("SELECT get_setting($1::text)", [name])[0].get_setting
+}
+
+function password_login(req) {
+var the_name = req.params.name
+var pwd = req.params.password
+
+if (the_name && pwd) {
+	return plv8.execute("SELECT login_password(($1)::frest.identifier, $2 )", [the_name, pwd])
+}
+	return false
+}
+
+var cookie
+if (fn('login_token')(req)) {
+	return fn('request')(args)
+} else if (cookie = password_login(req)) {
+	return setCookie(cookie, req)
+} else {
+	return show_login()
+}$_$;
+
+
+ALTER FUNCTION anon.request(req json) OWNER TO frest;
+
+SET search_path = frest, pg_catalog;
+
+--
+-- TOC entry 322 (class 1255 OID 42167)
+-- Name: create_user(text, text, text); Type: FUNCTION; Schema: frest; Owner: frest
+--
+
+CREATE FUNCTION create_user(r text, password text, password_confirmation text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$DECLARE
+	s text;
+BEGIN
+	IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=r) THEN
+		RAISE EXCEPTION 'Role % already exists', r;
+	ELSIF password <> password_confirmation THEN
+		RAISE EXCEPTION 'Password does not match confirmation';
+	ELSE
+		CREATE ROLE r LOGIN;
+		s := lib.gen_salt('bf', 10);
+		INSERT INTO
+			frest.roles(
+				role_name,
+				password,
+				salt
+		)
+		VALUES(
+			r,
+			lib.crypt(password, s),
+			s
+		);
+	END IF;
+	ALTER ROLE r SET search_path TO frest,frest_framework,lib;
+END
+$$;
+
+
+ALTER FUNCTION frest.create_user(r text, password text, password_confirmation text) OWNER TO frest;
+
+--
+-- TOC entry 313 (class 1255 OID 42112)
+-- Name: current_role_oid(); Type: FUNCTION; Schema: frest; Owner: frest
+--
+
+CREATE FUNCTION current_role_oid() RETURNS oid
+    LANGUAGE sql
+    AS $$select oid from pg_roles where rolname = session_user$$;
+
+
+ALTER FUNCTION frest.current_role_oid() OWNER TO frest;
+
+--
+-- TOC entry 217 (class 1255 OID 41666)
+-- Name: mustache(text, json); Type: FUNCTION; Schema: frest; Owner: frest
+--
+
+CREATE FUNCTION mustache(template text, view json) RETURNS text
+    LANGUAGE plv8 IMMUTABLE STRICT
+    AS $_$var exports = {};
+/*!
+ * mustache.js - Logic-less {{mustache}} templates with JavaScript
+ * http://github.com/janl/mustache.js
+ */
+
+/*global define: false Mustache: true*/
+
+(function defineMustache (global, factory) {
+  if (typeof exports === 'object' && exports && typeof exports.nodeName !== 'string') {
+    factory(exports); // CommonJS
+  } else if (typeof define === 'function' && define.amd) {
+    define(['exports'], factory); // AMD
+  } else {
+    global.Mustache = {};
+    factory(global.Mustache); // script, wsh, asp
+  }
+}(this, function mustacheFactory (mustache) {
+
+  var objectToString = Object.prototype.toString;
+  var isArray = Array.isArray || function isArrayPolyfill (object) {
+    return objectToString.call(object) === '[object Array]';
+  };
+
+  function isFunction (object) {
+    return typeof object === 'function';
+  }
+
+  /**
+   * More correct typeof string handling array
+   * which normally returns typeof 'object'
+   */
+  function typeStr (obj) {
+    return isArray(obj) ? 'array' : typeof obj;
+  }
+
+  function escapeRegExp (string) {
+    return string.replace(/[\-\[\]{}()*+?.,\\\^$|#\s]/g, '\\$&');
+  }
+
+  /**
+   * Null safe way of checking whether or not an object,
+   * including its prototype, has a given property
+   */
+  function hasProperty (obj, propName) {
+    return obj != null && typeof obj === 'object' && (propName in obj);
+  }
+
+  // Workaround for https://issues.apache.org/jira/browse/COUCHDB-577
+  // See https://github.com/janl/mustache.js/issues/189
+  var regExpTest = RegExp.prototype.test;
+  function testRegExp (re, string) {
+    return regExpTest.call(re, string);
+  }
+
+  var nonSpaceRe = /\S/;
+  function isWhitespace (string) {
+    return !testRegExp(nonSpaceRe, string);
+  }
+
+  var entityMap = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+    '/': '&#x2F;',
+    '`': '&#x60;',
+    '=': '&#x3D;'
+  };
+
+  function escapeHtml (string) {
+    return String(string).replace(/[&<>"'`=\/]/g, function fromEntityMap (s) {
+      return entityMap[s];
+    });
+  }
+
+  var whiteRe = /\s*/;
+  var spaceRe = /\s+/;
+  var equalsRe = /\s*=/;
+  var curlyRe = /\s*\}/;
+  var tagRe = /#|\^|\/|>|\{|&|=|!/;
+
+  /**
+   * Breaks up the given `template` string into a tree of tokens. If the `tags`
+   * argument is given here it must be an array with two string values: the
+   * opening and closing tags used in the template (e.g. [ "<%", "%>" ]). Of
+   * course, the default is to use mustaches (i.e. mustache.tags).
+   *
+   * A token is an array with at least 4 elements. The first element is the
+   * mustache symbol that was used inside the tag, e.g. "#" or "&". If the tag
+   * did not contain a symbol (i.e. {{myValue}}) this element is "name". For
+   * all text that appears outside a symbol this element is "text".
+   *
+   * The second element of a token is its "value". For mustache tags this is
+   * whatever else was inside the tag besides the opening symbol. For text tokens
+   * this is the text itself.
+   *
+   * The third and fourth elements of the token are the start and end indices,
+   * respectively, of the token in the original template.
+   *
+   * Tokens that are the root node of a subtree contain two more elements: 1) an
+   * array of tokens in the subtree and 2) the index in the original template at
+   * which the closing tag for that section begins.
+   */
+  function parseTemplate (template, tags) {
+    if (!template)
+      return [];
+
+    var sections = [];     // Stack to hold section tokens
+    var tokens = [];       // Buffer to hold the tokens
+    var spaces = [];       // Indices of whitespace tokens on the current line
+    var hasTag = false;    // Is there a {{tag}} on the current line?
+    var nonSpace = false;  // Is there a non-space char on the current line?
+
+    // Strips all whitespace tokens array for the current line
+    // if there was a {{#tag}} on it and otherwise only space.
+    function stripSpace () {
+      if (hasTag && !nonSpace) {
+        while (spaces.length)
+          delete tokens[spaces.pop()];
+      } else {
+        spaces = [];
+      }
+
+      hasTag = false;
+      nonSpace = false;
+    }
+
+    var openingTagRe, closingTagRe, closingCurlyRe;
+    function compileTags (tagsToCompile) {
+      if (typeof tagsToCompile === 'string')
+        tagsToCompile = tagsToCompile.split(spaceRe, 2);
+
+      if (!isArray(tagsToCompile) || tagsToCompile.length !== 2)
+        throw new Error('Invalid tags: ' + tagsToCompile);
+
+      openingTagRe = new RegExp(escapeRegExp(tagsToCompile[0]) + '\\s*');
+      closingTagRe = new RegExp('\\s*' + escapeRegExp(tagsToCompile[1]));
+      closingCurlyRe = new RegExp('\\s*' + escapeRegExp('}' + tagsToCompile[1]));
+    }
+
+    compileTags(tags || mustache.tags);
+
+    var scanner = new Scanner(template);
+
+    var start, type, value, chr, token, openSection;
+    while (!scanner.eos()) {
+      start = scanner.pos;
+
+      // Match any text between tags.
+      value = scanner.scanUntil(openingTagRe);
+
+      if (value) {
+        for (var i = 0, valueLength = value.length; i < valueLength; ++i) {
+          chr = value.charAt(i);
+
+          if (isWhitespace(chr)) {
+            spaces.push(tokens.length);
+          } else {
+            nonSpace = true;
+          }
+
+          tokens.push([ 'text', chr, start, start + 1 ]);
+          start += 1;
+
+          // Check for whitespace on the current line.
+          if (chr === '\n')
+            stripSpace();
+        }
+      }
+
+      // Match the opening tag.
+      if (!scanner.scan(openingTagRe))
+        break;
+
+      hasTag = true;
+
+      // Get the tag type.
+      type = scanner.scan(tagRe) || 'name';
+      scanner.scan(whiteRe);
+
+      // Get the tag value.
+      if (type === '=') {
+        value = scanner.scanUntil(equalsRe);
+        scanner.scan(equalsRe);
+        scanner.scanUntil(closingTagRe);
+      } else if (type === '{') {
+        value = scanner.scanUntil(closingCurlyRe);
+        scanner.scan(curlyRe);
+        scanner.scanUntil(closingTagRe);
+        type = '&';
+      } else {
+        value = scanner.scanUntil(closingTagRe);
+      }
+
+      // Match the closing tag.
+      if (!scanner.scan(closingTagRe))
+        throw new Error('Unclosed tag at ' + scanner.pos);
+
+      token = [ type, value, start, scanner.pos ];
+      tokens.push(token);
+
+      if (type === '#' || type === '^') {
+        sections.push(token);
+      } else if (type === '/') {
+        // Check section nesting.
+        openSection = sections.pop();
+
+        if (!openSection)
+          throw new Error('Unopened section "' + value + '" at ' + start);
+
+        if (openSection[1] !== value)
+          throw new Error('Unclosed section "' + openSection[1] + '" at ' + start);
+      } else if (type === 'name' || type === '{' || type === '&') {
+        nonSpace = true;
+      } else if (type === '=') {
+        // Set the tags for the next time around.
+        compileTags(value);
+      }
+    }
+
+    // Make sure there are no open sections when we're done.
+    openSection = sections.pop();
+
+    if (openSection)
+      throw new Error('Unclosed section "' + openSection[1] + '" at ' + scanner.pos);
+
+    return nestTokens(squashTokens(tokens));
+  }
+
+  /**
+   * Combines the values of consecutive text tokens in the given `tokens` array
+   * to a single token.
+   */
+  function squashTokens (tokens) {
+    var squashedTokens = [];
+
+    var token, lastToken;
+    for (var i = 0, numTokens = tokens.length; i < numTokens; ++i) {
+      token = tokens[i];
+
+      if (token) {
+        if (token[0] === 'text' && lastToken && lastToken[0] === 'text') {
+          lastToken[1] += token[1];
+          lastToken[3] = token[3];
+        } else {
+          squashedTokens.push(token);
+          lastToken = token;
+        }
+      }
+    }
+
+    return squashedTokens;
+  }
+
+  /**
+   * Forms the given array of `tokens` into a nested tree structure where
+   * tokens that represent a section have two additional items: 1) an array of
+   * all tokens that appear in that section and 2) the index in the original
+   * template that represents the end of that section.
+   */
+  function nestTokens (tokens) {
+    var nestedTokens = [];
+    var collector = nestedTokens;
+    var sections = [];
+
+    var token, section;
+    for (var i = 0, numTokens = tokens.length; i < numTokens; ++i) {
+      token = tokens[i];
+
+      switch (token[0]) {
+        case '#':
+        case '^':
+          collector.push(token);
+          sections.push(token);
+          collector = token[4] = [];
+          break;
+        case '/':
+          section = sections.pop();
+          section[5] = token[2];
+          collector = sections.length > 0 ? sections[sections.length - 1][4] : nestedTokens;
+          break;
+        default:
+          collector.push(token);
+      }
+    }
+
+    return nestedTokens;
+  }
+
+  /**
+   * A simple string scanner that is used by the template parser to find
+   * tokens in template strings.
+   */
+  function Scanner (string) {
+    this.string = string;
+    this.tail = string;
+    this.pos = 0;
+  }
+
+  /**
+   * Returns `true` if the tail is empty (end of string).
+   */
+  Scanner.prototype.eos = function eos () {
+    return this.tail === '';
+  };
+
+  /**
+   * Tries to match the given regular expression at the current position.
+   * Returns the matched text if it can match, the empty string otherwise.
+   */
+  Scanner.prototype.scan = function scan (re) {
+    var match = this.tail.match(re);
+
+    if (!match || match.index !== 0)
+      return '';
+
+    var string = match[0];
+
+    this.tail = this.tail.substring(string.length);
+    this.pos += string.length;
+
+    return string;
+  };
+
+  /**
+   * Skips all text until the given regular expression can be matched. Returns
+   * the skipped string, which is the entire tail if no match can be made.
+   */
+  Scanner.prototype.scanUntil = function scanUntil (re) {
+    var index = this.tail.search(re), match;
+
+    switch (index) {
+      case -1:
+        match = this.tail;
+        this.tail = '';
+        break;
+      case 0:
+        match = '';
+        break;
+      default:
+        match = this.tail.substring(0, index);
+        this.tail = this.tail.substring(index);
+    }
+
+    this.pos += match.length;
+
+    return match;
+  };
+
+  /**
+   * Represents a rendering context by wrapping a view object and
+   * maintaining a reference to the parent context.
+   */
+  function Context (view, parentContext) {
+    this.view = view;
+    this.cache = { '.': this.view };
+    this.parent = parentContext;
+  }
+
+  /**
+   * Creates a new context using the given view with this context
+   * as the parent.
+   */
+  Context.prototype.push = function push (view) {
+    return new Context(view, this);
+  };
+
+  /**
+   * Returns the value of the given name in this context, traversing
+   * up the context hierarchy if the value is absent in this context's view.
+   */
+  Context.prototype.lookup = function lookup (name) {
+    var cache = this.cache;
+
+    var value;
+    if (cache.hasOwnProperty(name)) {
+      value = cache[name];
+    } else {
+      var context = this, names, index, lookupHit = false;
+
+      while (context) {
+        if (name.indexOf('.') > 0) {
+          value = context.view;
+          names = name.split('.');
+          index = 0;
+
+          /**
+           * Using the dot notion path in `name`, we descend through the
+           * nested objects.
+           *
+           * To be certain that the lookup has been successful, we have to
+           * check if the last object in the path actually has the property
+           * we are looking for. We store the result in `lookupHit`.
+           *
+           * This is specially necessary for when the value has been set to
+           * `undefined` and we want to avoid looking up parent contexts.
+           **/
+          while (value != null && index < names.length) {
+            if (index === names.length - 1)
+              lookupHit = hasProperty(value, names[index]);
+
+            value = value[names[index++]];
+          }
+        } else {
+          value = context.view[name];
+          lookupHit = hasProperty(context.view, name);
+        }
+
+        if (lookupHit)
+          break;
+
+        context = context.parent;
+      }
+
+      cache[name] = value;
+    }
+
+    if (isFunction(value))
+      value = value.call(this.view);
+
+    return value;
+  };
+
+  /**
+   * A Writer knows how to take a stream of tokens and render them to a
+   * string, given a context. It also maintains a cache of templates to
+   * avoid the need to parse the same template twice.
+   */
+  function Writer () {
+    this.cache = {};
+  }
+
+  /**
+   * Clears all cached templates in this writer.
+   */
+  Writer.prototype.clearCache = function clearCache () {
+    this.cache = {};
+  };
+
+  /**
+   * Parses and caches the given `template` and returns the array of tokens
+   * that is generated from the parse.
+   */
+  Writer.prototype.parse = function parse (template, tags) {
+    var cache = this.cache;
+    var tokens = cache[template];
+
+    if (tokens == null)
+      tokens = cache[template] = parseTemplate(template, tags);
+
+    return tokens;
+  };
+
+  /**
+   * High-level method that is used to render the given `template` with
+   * the given `view`.
+   *
+   * The optional `partials` argument may be an object that contains the
+   * names and templates of partials that are used in the template. It may
+   * also be a function that is used to load partial templates on the fly
+   * that takes a single argument: the name of the partial.
+   */
+  Writer.prototype.render = function render (template, view, partials) {
+    var tokens = this.parse(template);
+    var context = (view instanceof Context) ? view : new Context(view);
+    return this.renderTokens(tokens, context, partials, template);
+  };
+
+  /**
+   * Low-level method that renders the given array of `tokens` using
+   * the given `context` and `partials`.
+   *
+   * Note: The `originalTemplate` is only ever used to extract the portion
+   * of the original template that was contained in a higher-order section.
+   * If the template doesn't use higher-order sections, this argument may
+   * be omitted.
+   */
+  Writer.prototype.renderTokens = function renderTokens (tokens, context, partials, originalTemplate) {
+    var buffer = '';
+
+    var token, symbol, value;
+    for (var i = 0, numTokens = tokens.length; i < numTokens; ++i) {
+      value = undefined;
+      token = tokens[i];
+      symbol = token[0];
+
+      if (symbol === '#') value = this.renderSection(token, context, partials, originalTemplate);
+      else if (symbol === '^') value = this.renderInverted(token, context, partials, originalTemplate);
+      else if (symbol === '>') value = this.renderPartial(token, context, partials, originalTemplate);
+      else if (symbol === '&') value = this.unescapedValue(token, context);
+      else if (symbol === 'name') value = this.escapedValue(token, context);
+      else if (symbol === 'text') value = this.rawValue(token);
+
+      if (value !== undefined)
+        buffer += value;
+    }
+
+    return buffer;
+  };
+
+  Writer.prototype.renderSection = function renderSection (token, context, partials, originalTemplate) {
+    var self = this;
+    var buffer = '';
+    var value = context.lookup(token[1]);
+
+    // This function is used to render an arbitrary template
+    // in the current context by higher-order sections.
+    function subRender (template) {
+      return self.render(template, context, partials);
+    }
+
+    if (!value) return;
+
+    if (isArray(value)) {
+      for (var j = 0, valueLength = value.length; j < valueLength; ++j) {
+        buffer += this.renderTokens(token[4], context.push(value[j]), partials, originalTemplate);
+      }
+    } else if (typeof value === 'object' || typeof value === 'string' || typeof value === 'number') {
+      buffer += this.renderTokens(token[4], context.push(value), partials, originalTemplate);
+    } else if (isFunction(value)) {
+      if (typeof originalTemplate !== 'string')
+        throw new Error('Cannot use higher-order sections without the original template');
+
+      // Extract the portion of the original template that the section contains.
+      value = value.call(context.view, originalTemplate.slice(token[3], token[5]), subRender);
+
+      if (value != null)
+        buffer += value;
+    } else {
+      buffer += this.renderTokens(token[4], context, partials, originalTemplate);
+    }
+    return buffer;
+  };
+
+  Writer.prototype.renderInverted = function renderInverted (token, context, partials, originalTemplate) {
+    var value = context.lookup(token[1]);
+
+    // Use JavaScript's definition of falsy. Include empty arrays.
+    // See https://github.com/janl/mustache.js/issues/186
+    if (!value || (isArray(value) && value.length === 0))
+      return this.renderTokens(token[4], context, partials, originalTemplate);
+  };
+
+  Writer.prototype.renderPartial = function renderPartial (token, context, partials) {
+    if (!partials) return;
+
+    var value = isFunction(partials) ? partials(token[1]) : partials[token[1]];
+    if (value != null)
+      return this.renderTokens(this.parse(value), context, partials, value);
+  };
+
+  Writer.prototype.unescapedValue = function unescapedValue (token, context) {
+    var value = context.lookup(token[1]);
+    if (value != null)
+      return value;
+  };
+
+  Writer.prototype.escapedValue = function escapedValue (token, context) {
+    var value = context.lookup(token[1]);
+    if (value != null)
+      return mustache.escape(value);
+  };
+
+  Writer.prototype.rawValue = function rawValue (token) {
+    return token[1];
+  };
+
+  mustache.name = 'mustache.js';
+  mustache.version = '2.3.0';
+  mustache.tags = [ '{{', '}}' ];
+
+  // All high-level mustache.* functions use this writer.
+  var defaultWriter = new Writer();
+
+  /**
+   * Clears all cached templates in the default writer.
+   */
+  mustache.clearCache = function clearCache () {
+    return defaultWriter.clearCache();
+  };
+
+  /**
+   * Parses and caches the given template in the default writer and returns the
+   * array of tokens it contains. Doing this ahead of time avoids the need to
+   * parse templates on the fly as they are rendered.
+   */
+  mustache.parse = function parse (template, tags) {
+    return defaultWriter.parse(template, tags);
+  };
+
+  /**
+   * Renders the `template` with the given `view` and `partials` using the
+   * default writer.
+   */
+  mustache.render = function render (template, view, partials) {
+    if (typeof template !== 'string') {
+      throw new TypeError('Invalid template! Template should be a "string" ' +
+                          'but "' + typeStr(template) + '" was given as the first ' +
+                          'argument for mustache#render(template, view, partials)');
+    }
+
+    return defaultWriter.render(template, view, partials);
+  };
+
+  // This is here for backwards compatibility with 0.4.x.,
+  /*eslint-disable */ // eslint wants camel cased function name
+  mustache.to_html = function to_html (template, view, partials, send) {
+    /*eslint-enable*/
+
+    var result = mustache.render(template, view, partials);
+
+    if (isFunction(send)) {
+      send(result);
+    } else {
+      return result;
+    }
+  };
+
+  // Export the escaping function so that the user may override it.
+  // See https://github.com/janl/mustache.js/issues/244
+  mustache.escape = escapeHtml;
+
+  // Export these mainly for testing, but also for advanced usage.
+  mustache.Scanner = Scanner;
+  mustache.Context = Context;
+  mustache.Writer = Writer;
+
+  return mustache;
+}));
+var Mustache = exports;
+return Mustache.render(template, view);$_$;
+
+
+ALTER FUNCTION frest.mustache(template text, view json) OWNER TO frest;
+
+--
+-- TOC entry 218 (class 1255 OID 41706)
+-- Name: plv8_startup(); Type: FUNCTION; Schema: frest; Owner: frest
+--
+
+CREATE FUNCTION plv8_startup() RETURNS void
+    LANGUAGE plv8 SECURITY DEFINER
+    AS $$plv8.functions = {};
+
+plv8.reloadFunction = function reloadFunction(id) {
+	result = plv8.execute("SELECT source FROM javascript_code WHERE id = ? LIMIT 1", [id])
+
+	if (result && result.length > 0) {
+		fn = exec("function " + id + "(arg){" + source + "}")
+		plv8.functions[id] = fn
+		return fn
+	} else {
+		return nil
+	}
+}
+
+plv8.invokeFunction = function invokeFunction(id, arg){
+	if (plv8.functions[id]) {
+		plv8.functions[id](arg);
+	} else {
+		plv8.reloadFunction(id);
+	}
+}
+
+plv8.inspect = function inspect(object, result) {
+    if (typeof object != "object")
+        return "Invalid object";
+    if (typeof result == "undefined")
+        result = '';
+
+    if (result.length > 50)
+        return "[RECURSION TOO DEEP. ABORTING.]";
+
+    var rows = [];
+    for (var property in object) {
+        var datatype = typeof object[property];
+
+        var tempDescription = result+'"'+property+'"';
+        tempDescription += ' ('+datatype+') => ';
+        if (datatype == "object")
+            tempDescription += 'object: '+objectInspector(object[property],result+'  ');
+        else
+            tempDescription += object[property];
+
+        rows.push(tempDescription);
+    }//Close for
+
+    return rows.join(result+"\n");
+}//End objectInspector
+$$;
+
+
+ALTER FUNCTION frest.plv8_startup() OWNER TO frest;
+
+--
+-- TOC entry 225 (class 1255 OID 41852)
+-- Name: request(json); Type: FUNCTION; Schema: frest; Owner: frest
+--
+
+CREATE FUNCTION request(req json, OUT result json) RETURNS json
+    LANGUAGE plv8
+    AS $$return {
+	'status': 200,
+	'headers': {},
+	'body': [JSON.stringify(req)]
+}$$;
+
+
+ALTER FUNCTION frest.request(req json, OUT result json) OWNER TO frest;
+
+--
+-- TOC entry 323 (class 1255 OID 42173)
+-- Name: request(json, json); Type: FUNCTION; Schema: frest; Owner: frest
+--
+
+CREATE FUNCTION request(req json, result json) RETURNS json
+    LANGUAGE plv8
+    AS $$return {
+	'status': 201,
+	'headers': {},
+	'body': ['foo']
+}$$;
+
+
+ALTER FUNCTION frest.request(req json, result json) OWNER TO frest;
+
+SET search_path = frest_framework, pg_catalog;
+
+--
+-- TOC entry 319 (class 1255 OID 42135)
+-- Name: get_setting(text); Type: FUNCTION; Schema: frest_framework; Owner: frest
+--
+
+CREATE FUNCTION get_setting(name text) RETURNS jsonb
+    LANGUAGE sql SECURITY DEFINER
+    AS $_$SELECT value FROM frest_framework.settings WHERE frest_framework.settings.name = $1$_$;
+
+
+ALTER FUNCTION frest_framework.get_setting(name text) OWNER TO frest;
+
+--
+-- TOC entry 318 (class 1255 OID 42127)
+-- Name: initialize(); Type: FUNCTION; Schema: frest_framework; Owner: frest
+--
+
+CREATE FUNCTION initialize() RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$BEGIN
+	INSERT INTO
+		frest_framework.settings(
+			name,
+			value,
+			type
+		)
+	VALUES(
+		'site_id',
+		TO_JSON(lib.gen_random_uuid()),
+		lib.type_id('uuid'::text)
+	) ON CONFLICT DO NOTHING;
+END$$;
+
+
+ALTER FUNCTION frest_framework.initialize() OWNER TO frest;
+
+--
+-- TOC entry 315 (class 1255 OID 42144)
+-- Name: type_id(name); Type: FUNCTION; Schema: frest_framework; Owner: frest
+--
+
+CREATE FUNCTION type_id(name) RETURNS uuid
+    LANGUAGE sql IMMUTABLE SECURITY DEFINER
+    AS $$SELECT
+	id
+FROM
+	frest_framework.types
+WHERE
+	frest_framework.types.name = name$$;
+
+
+ALTER FUNCTION frest_framework.type_id(name) OWNER TO frest;
+
+SET search_path = lib, pg_catalog;
+
+--
+-- TOC entry 317 (class 1255 OID 42130)
+-- Name: type_id(text); Type: FUNCTION; Schema: lib; Owner: frest
+--
+
+CREATE FUNCTION type_id(the_type text) RETURNS uuid
+    LANGUAGE sql
+    AS $$SELECT id FROM frest_framework.types WHERE name = the_type$$;
+
+
+ALTER FUNCTION lib.type_id(the_type text) OWNER TO frest;
+
+SET search_path = anon, pg_catalog;
+
+SET default_tablespace = '';
+
+SET default_with_oids = false;
+
+--
+-- TOC entry 204 (class 1259 OID 42136)
+-- Name: content; Type: TABLE; Schema: anon; Owner: frest
+--
+
+CREATE TABLE content (
+    id uuid DEFAULT lib.gen_random_uuid() NOT NULL,
+    content jsonb,
+    type uuid,
+    creator oid DEFAULT frest.current_role_oid() NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE content OWNER TO frest;
+
+SET search_path = frest, pg_catalog;
+
+--
+-- TOC entry 197 (class 1259 OID 41697)
+-- Name: javascript_code; Type: TABLE; Schema: frest; Owner: frest
+--
+
+CREATE TABLE javascript_code (
+    id uuid NOT NULL,
+    source text
+);
+
+
+ALTER TABLE javascript_code OWNER TO frest;
+
+--
+-- TOC entry 193 (class 1259 OID 41582)
+-- Name: roles; Type: TABLE; Schema: frest; Owner: frest
+--
+
+CREATE TABLE roles (
+    role_name identifier NOT NULL,
+    password text NOT NULL,
+    salt text NOT NULL
+);
+
+
+ALTER TABLE roles OWNER TO frest;
+
+--
+-- TOC entry 194 (class 1259 OID 41635)
+-- Name: session_tokens; Type: TABLE; Schema: frest; Owner: anon
+--
+
+CREATE TABLE session_tokens (
+    role_name identifier NOT NULL,
+    token text NOT NULL
+);
+
+
+ALTER TABLE session_tokens OWNER TO anon;
+
+--
+-- TOC entry 195 (class 1259 OID 41669)
+-- Name: types; Type: TABLE; Schema: frest; Owner: frest
+--
+
+CREATE TABLE types (
+    id uuid NOT NULL,
+    name text,
+    abstract boolean DEFAULT false NOT NULL
+);
+
+
+ALTER TABLE types OWNER TO frest;
+
+--
+-- TOC entry 196 (class 1259 OID 41676)
+-- Name: types_inheritance; Type: TABLE; Schema: frest; Owner: frest
+--
+
+CREATE TABLE types_inheritance (
+    parent uuid NOT NULL,
+    child uuid NOT NULL
+);
+
+
+ALTER TABLE types_inheritance OWNER TO frest;
+
+SET search_path = frest_framework, pg_catalog;
+
+--
+-- TOC entry 200 (class 1259 OID 41854)
+-- Name: content; Type: TABLE; Schema: frest_framework; Owner: frest
+--
+
+CREATE TABLE content (
+    id uuid NOT NULL,
+    content jsonb,
+    type uuid,
+    creator oid DEFAULT frest.current_role_oid() NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE content OWNER TO frest;
+
+--
+-- TOC entry 201 (class 1259 OID 41890)
+-- Name: settings; Type: TABLE; Schema: frest_framework; Owner: frest
+--
+
+CREATE TABLE settings (
+    name text NOT NULL,
+    value jsonb,
+    type uuid
+);
+
+
+ALTER TABLE settings OWNER TO frest;
+
+--
+-- TOC entry 202 (class 1259 OID 41898)
+-- Name: types; Type: TABLE; Schema: frest_framework; Owner: frest
+--
+
+CREATE TABLE types (
+    id uuid DEFAULT lib.gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    abstract boolean DEFAULT false NOT NULL
+);
+
+
+ALTER TABLE types OWNER TO frest;
+
+--
+-- TOC entry 203 (class 1259 OID 41906)
+-- Name: types_inheritance; Type: TABLE; Schema: frest_framework; Owner: frest
+--
+
+CREATE TABLE types_inheritance (
+    parent uuid NOT NULL,
+    child uuid NOT NULL
+);
+
+
+ALTER TABLE types_inheritance OWNER TO frest;
+
+SET search_path = anon, pg_catalog;
+
+--
+-- TOC entry 2631 (class 0 OID 42136)
+-- Dependencies: 204
+-- Data for Name: content; Type: TABLE DATA; Schema: anon; Owner: frest
+--
+
+COPY content (id, content, type, creator, created_at) FROM stdin;
+671ad198-1399-4652-ad53-e750f7a82cc6	"<html><form>Name:<input type=\\"text\\" name=\\"name\\"><br>Password:<input type=\\"text\\" name=\\"password\\"><br><button type=\\"submit\\"></form></html>"	e3ed2688-7fef-49a7-8a43-eaceeb5907f4	24618	2017-06-02 16:47:10.453347
+\.
+
+
+SET search_path = frest, pg_catalog;
+
+--
+-- TOC entry 2626 (class 0 OID 41697)
+-- Dependencies: 197
+-- Data for Name: javascript_code; Type: TABLE DATA; Schema: frest; Owner: frest
+--
+
+COPY javascript_code (id, source) FROM stdin;
+d2a1d1e5-c21a-4a4a-af54-cda59521bbaa	throw "test"
+\.
+
+
+--
+-- TOC entry 2622 (class 0 OID 41582)
+-- Dependencies: 193
+-- Data for Name: roles; Type: TABLE DATA; Schema: frest; Owner: frest
+--
+
+COPY roles (role_name, password, salt) FROM stdin;
+foo	$2a$10$KIhVpbOt5ospmoY8pUpxU.zi3Q.UCj0x72L51VT0aNKxp16vQjNV.	$2a$10$KIhVpbOt5ospmoY8pUpxU.
+\.
+
+
+--
+-- TOC entry 2623 (class 0 OID 41635)
+-- Dependencies: 194
+-- Data for Name: session_tokens; Type: TABLE DATA; Schema: frest; Owner: anon
+--
+
+COPY session_tokens (role_name, token) FROM stdin;
+foo	\\xc35553dce577c8a46e934caa5244e11e9d87b5dda64c541cade37d5f4434b3c0
+foo	\\xf8b05bf1076068bb30f63b0b4fbc746f005e588a1d9053441da2fbbc55709094
+foo	\\x7b9bd42ae642395b7351344088ebea008cb99ff250fb39107625f2a3e0201170
+foo	\\xa8cd420dac99e8fc2ebcb697278caa9be04056cb0496aea9314f4e1c08ce7bb8
+foo	\\x0cd88ad1eb215d986788914f2c5071b82771a0f48cf1d9d4b53629a2083fe99d
+foo	\\x2f7571a50d611d92369024bdd9c10e4684d71bd74c214785ee88d07297eb5506
+foo	\\xac050350f6a98cb6a74778ae7e2e381009b0c4c58259be09859912142baaa676
+foo	\\xd2e7b812c8e79f8483b22b0b47b448f0ec521d89d2258f9562c358677dce973f
+foo	\\x3ec2007e424d67db8f0f09607c468fe98a849dd2492dcf6766449ae8ef0c5fb3
+foo	\\x651b3936a7058a5eaf959be62e80f2ded9804ebe21baa59f431f1408aee4ffd9
+foo	\\x0162fbffed8c98c5f451fc23bb17c232b698da4dd22eee0d45b8acfadd12847c
+foo	\\x38e9bab47b6b230a9f535cbacedef211b695a7f8f05c15025ebb3c0d74dd821b
+foo	\\x7078a5e2cca9ca62af091d8e8c471de52b5997c16d124cc1974fcaf2ad4d70db
+foo	\\xd64fd537a5d41f16102808c8fd20d07cd5f5538e693ec93e04f0a841e6df0dc1
+foo	\\x9a17dabb7b25c39e9021ed85fec88774b8ed7d08ff93f98cc285528d278f2136
+foo	\\xd6397c0f25cad504a173e4ed1219a9137dd1884cfea8f8a9baf031358ca8b3d1
+foo	\\xf7a8e1c59751c5ce3ee3b9374f1328b7e914539d87258a3588bf9557b7fbbef7
+foo	\\x317bc22b6802aba61d55a00bae064506cdb3af14a9b39e2f49a8eb70f48e65a6
+foo	\\xcc9233391272fb63f81263f94681a6d6174a898d94a1ec7ee8b766e8c5f79de5
+foo	\\x4f595a6fd56da58272932db9fd177e988323038098104b609cb97d0fbe9b89ff
+foo	\\x77903b588794148f242aa17393f24cf528302324037eef0301facbe3b7ab0d35
+foo	\\x1f8d7dbce7ac472c4c1c24fccdecbac709aeddf71a559c779c70cc6319aa26af
+foo	\\xb15c74bfadebc02b15f794ab9b5622cbbb74cfac5c93359bc9e0f22d4ba4c095
+\.
+
+
+--
+-- TOC entry 2624 (class 0 OID 41669)
+-- Dependencies: 195
+-- Data for Name: types; Type: TABLE DATA; Schema: frest; Owner: frest
+--
+
+COPY types (id, name, abstract) FROM stdin;
+673c6a65-2395-458a-b37e-931dac635881	code	t
+6437f700-c2e0-475b-ab88-ee90d4228ae0	javascript	f
+feb91824-c47f-4feb-9532-361691a1e96d	livescript	f
+4e315671-b554-43d7-8ed9-82b838721dcf	json_function	f
+\.
+
+
+--
+-- TOC entry 2625 (class 0 OID 41676)
+-- Dependencies: 196
+-- Data for Name: types_inheritance; Type: TABLE DATA; Schema: frest; Owner: frest
+--
+
+COPY types_inheritance (parent, child) FROM stdin;
+673c6a65-2395-458a-b37e-931dac635881	6437f700-c2e0-475b-ab88-ee90d4228ae0
+673c6a65-2395-458a-b37e-931dac635881	feb91824-c47f-4feb-9532-361691a1e96d
+673c6a65-2395-458a-b37e-931dac635881	4e315671-b554-43d7-8ed9-82b838721dcf
+\.
+
+
+SET search_path = frest_framework, pg_catalog;
+
+--
+-- TOC entry 2627 (class 0 OID 41854)
+-- Dependencies: 200
+-- Data for Name: content; Type: TABLE DATA; Schema: frest_framework; Owner: frest
+--
+
+COPY content (id, content, type, creator, created_at) FROM stdin;
+\.
+
+
+--
+-- TOC entry 2628 (class 0 OID 41890)
+-- Dependencies: 201
+-- Data for Name: settings; Type: TABLE DATA; Schema: frest_framework; Owner: frest
+--
+
+COPY settings (name, value, type) FROM stdin;
+site_id	"9ad00d94-0de9-4a36-9833-858e70fc2e8b"	a66d6722-bb76-4f38-a44e-a4a8b6f3b993
+login_form_id	"671ad198-1399-4652-ad53-e750f7a82cc6"	e3ed2688-7fef-49a7-8a43-eaceeb5907f4
+\.
+
+
+--
+-- TOC entry 2629 (class 0 OID 41898)
+-- Dependencies: 202
+-- Data for Name: types; Type: TABLE DATA; Schema: frest_framework; Owner: frest
+--
+
+COPY types (id, name, abstract) FROM stdin;
+e3ed2688-7fef-49a7-8a43-eaceeb5907f4	moustache	f
+d2bb1ca5-9b44-46a8-9932-fa338d49d134	text	f
+4d2db469-dad8-4a76-9bbd-1e5e4e3c0e60	javascript	f
+a66d6722-bb76-4f38-a44e-a4a8b6f3b993	uuid	f
+\.
+
+
+--
+-- TOC entry 2630 (class 0 OID 41906)
+-- Dependencies: 203
+-- Data for Name: types_inheritance; Type: TABLE DATA; Schema: frest_framework; Owner: frest
+--
+
+COPY types_inheritance (parent, child) FROM stdin;
+d2bb1ca5-9b44-46a8-9932-fa338d49d134	e3ed2688-7fef-49a7-8a43-eaceeb5907f4
+\.
+
+
+SET search_path = anon, pg_catalog;
+
+--
+-- TOC entry 2504 (class 2606 OID 42143)
+-- Name: content content_pkey; Type: CONSTRAINT; Schema: anon; Owner: frest
+--
+
+ALTER TABLE ONLY content
+    ADD CONSTRAINT content_pkey PRIMARY KEY (id);
+
+
+SET search_path = frest, pg_catalog;
+
+--
+-- TOC entry 2494 (class 2606 OID 41705)
+-- Name: javascript_code javascript_code_pkey; Type: CONSTRAINT; Schema: frest; Owner: frest
+--
+
+ALTER TABLE ONLY javascript_code
+    ADD CONSTRAINT javascript_code_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 2488 (class 2606 OID 42160)
+-- Name: roles roles_pkey; Type: CONSTRAINT; Schema: frest; Owner: frest
+--
+
+ALTER TABLE ONLY roles
+    ADD CONSTRAINT roles_pkey PRIMARY KEY (role_name);
+
+
+--
+-- TOC entry 2492 (class 2606 OID 41680)
+-- Name: types_inheritance types_inheritance_pkey; Type: CONSTRAINT; Schema: frest; Owner: frest
+--
+
+ALTER TABLE ONLY types_inheritance
+    ADD CONSTRAINT types_inheritance_pkey PRIMARY KEY (parent, child);
+
+
+--
+-- TOC entry 2490 (class 2606 OID 41682)
+-- Name: types types_pkey; Type: CONSTRAINT; Schema: frest; Owner: frest
+--
+
+ALTER TABLE ONLY types
+    ADD CONSTRAINT types_pkey PRIMARY KEY (id);
+
+
+SET search_path = frest_framework, pg_catalog;
+
+--
+-- TOC entry 2498 (class 2606 OID 42124)
+-- Name: settings content_copy_pkey; Type: CONSTRAINT; Schema: frest_framework; Owner: frest
+--
+
+ALTER TABLE ONLY settings
+    ADD CONSTRAINT content_copy_pkey PRIMARY KEY (name);
+
+
+--
+-- TOC entry 2496 (class 2606 OID 41862)
+-- Name: content content_pkey; Type: CONSTRAINT; Schema: frest_framework; Owner: frest
+--
+
+ALTER TABLE ONLY content
+    ADD CONSTRAINT content_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 2502 (class 2606 OID 41910)
+-- Name: types_inheritance types_inheritance_pkey; Type: CONSTRAINT; Schema: frest_framework; Owner: frest
+--
+
+ALTER TABLE ONLY types_inheritance
+    ADD CONSTRAINT types_inheritance_pkey PRIMARY KEY (parent, child);
+
+
+--
+-- TOC entry 2500 (class 2606 OID 42132)
+-- Name: types types_pkey; Type: CONSTRAINT; Schema: frest_framework; Owner: frest
+--
+
+ALTER TABLE ONLY types
+    ADD CONSTRAINT types_pkey PRIMARY KEY (id, name);
+
+
+--
+-- TOC entry 2637 (class 0 OID 0)
+-- Dependencies: 15
+-- Name: frest_framework; Type: ACL; Schema: -; Owner: frest
+--
+
+GRANT USAGE ON SCHEMA frest_framework TO frest_user;
+
+
+--
+-- TOC entry 2638 (class 0 OID 0)
+-- Dependencies: 12
+-- Name: lib; Type: ACL; Schema: -; Owner: frest
+--
+
+GRANT USAGE ON SCHEMA lib TO anon;
+
+
+SET search_path = anon, pg_catalog;
+
+--
+-- TOC entry 2645 (class 0 OID 0)
+-- Dependencies: 316
+-- Name: login_token(text); Type: ACL; Schema: anon; Owner: frest
+--
+
+GRANT ALL ON FUNCTION login_token(token text) TO anon WITH GRANT OPTION;
+
+
+--
+-- TOC entry 2646 (class 0 OID 0)
+-- Dependencies: 204
+-- Name: content; Type: ACL; Schema: anon; Owner: frest
+--
+
+GRANT SELECT ON TABLE content TO anon;
+
+
+-- Completed on 2017-06-10 21:14:33 PDT
+
+--
+-- PostgreSQL database dump complete
+--
+
