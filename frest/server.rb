@@ -24,9 +24,8 @@ module Frest
             cookies:  req.cookies
           }.to_json],
         )
-        result = result.first['request']
-        
-        results = JSON.parse(result).first['request']
+
+        results = JSON.parse(result.first['request'])
         [results['status'], results['headers'], results['body']]
       end
 
